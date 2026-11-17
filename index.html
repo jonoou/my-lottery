@@ -3,20 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>双色球智能选号系统</title>
+<title>双色球联网智能选号系统</title>
 <style>
   :root { --p: #e63946; --s: #1d3557; --bg: #f8f9fa; --red: #ff4d4f; --blue: #1890ff; }
-  body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 15px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); margin: 0; padding: 15px; }
   .box { max-width: 1000px; margin: 0 auto; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
   @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
   .card { background: #fff; border-radius: 8px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 15px; }
-  .tit { font-size: 1rem; font-weight: bold; color: var(--s); margin-bottom: 10px; border-left: 4px solid var(--p); padding-left: 8px; }
+  .tit { font-size: 1rem; font-weight: bold; color: var(--s); margin-bottom: 10px; border-left: 4px solid var(--p); padding-left: 8px; display: flex; justify-content: space-between; align-items: center; }
   .fg { margin-bottom: 10px; font-size: 0.85rem; }
   select, input { width: 100%; padding: 6px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box; }
   .btns { display: flex; gap: 8px; margin-top: 10px; }
   .btn { background: var(--p); color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer; flex: 2; font-weight: bold; }
   .btn-e { background: #2b9348; flex: 1; }
+  .btn-sm { background: #457b9d; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+  .btn-sm:hover, .btn:hover { opacity: 0.9; }
   .kbox { display: flex; flex-wrap: wrap; gap: 4px; background: #f8f9fa; padding: 8px; border-radius: 4px; }
   .kb { width: 26px; height: 26px; border-radius: 50%; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; cursor: pointer; background: #fff; }
   .kb.act { background: #343a40; color: #fff; border-color: #343a40; }
@@ -26,18 +28,19 @@
   .b.u { background: linear-gradient(135deg, #69c0ff, var(--blue)); }
   .div { width: 1px; height: 16px; background: #ccc; margin: 0 6px; }
   .tag { font-size: 0.7rem; background: #e9ecef; padding: 2px 4px; border-radius: 4px; margin-left: auto; color: #495057; }
-  .wrap { max-height: 160px; overflow-y: auto; font-size: 0.8rem; }
+  .wrap { max-height: 180px; overflow-y: auto; font-size: 0.8rem; }
   table { width: 100%; border-collapse: collapse; }
   th, td { padding: 6px; border-bottom: 1px solid #efefef; text-align: left; }
   th { background: #f1f3f5; position: sticky; top: 0; }
   .chart { display: flex; align-items: flex-end; height: 80px; gap: 1px; border-bottom: 2px solid #ccc; }
   .bw { flex: 1; display: flex; flex-direction: column; align-items: center; font-size: 0.6rem; }
   .bar { width: 100%; background: #ced4da; min-height: 2px; }
+  .status { font-size: 0.75rem; color: #666; margin-bottom: 8px; background: #e9ecef; padding: 5px 8px; border-radius: 4px; }
 </style>
 </head>
 <body>
 <div class="box">
-  <h2 style="text-align:center;color:var(--s);margin:0 0 15px 0;">🔮 双色球智能分析选号系统</h2>
+  <h2 style="text-align:center;color:var(--s);margin:0 0 15px 0;">🔮 双色球联网智能分析选号系统</h2>
   <div class="grid">
     <div>
       <div class="card">
@@ -68,9 +71,16 @@
       <div class="card"><div class="tit">🎉 选号结果</div><div id="res"></div></div>
     </div>
     <div>
-      <div class="card"><div class="tit">📊 红球热度走势 (近10期)</div><div class="chart" id="ct"></div></div>
+      <div class="card"><div class="tit">📊 红球热度走势 (近15期统计)</div><div class="chart" id="ct"></div></div>
       <div class="card">
-        <div class="tit">📜 历史开奖碰撞库 (自动规避一等奖)</div>
+        <div class="tit">
+          <span>📜 联网历史碰撞库</span>
+          <div>
+            <button class="btn-sm" onclick="addManual()">➕ 手动追加</button>
+            <button class="btn-sm" style="background:#2a9d8f;" onclick="syncOnline(true)">🔄 联网更新</button>
+          </div>
+        </div>
+        <div class="status" id="syncStatus">正在初始化历史数据库...</div>
         <div class="wrap"><table><thead><tr><th>期号</th><th>红球号码</th><th>蓝球</th></tr></thead><tbody id="hist"></tbody></table></div>
       </div>
     </div>
@@ -78,7 +88,7 @@
 </div>
 
 <script>
-  const rawHist = [
+  const defaultRaw = [
     "2026131|02,08,14,19,25,31|15",
     "2026130|01,06,12,18,24,30|02",
     "2026129|03,09,15,21,27,33|05",
@@ -91,21 +101,38 @@
     "2026122|04,09,12,18,24,31|06"
   ];
 
-  let histData = rawHist.map(str => {
-    const p = str.split('|');
-    return { q: p[0], r: p[1].split(',').map(Number), b: Number(p[2]) };
-  });
-
+  let histData = [];
   let killed = new Set();
   let results = [];
 
   window.onload = async function() {
+    loadLocalData();
     initKill();
-    await syncOnline();
+    renderAll();
+    await syncOnline(false);
+  };
+
+  function loadLocalData() {
+    const saved = localStorage.getItem('ssq_history_v1');
+    if (saved) {
+      histData = JSON.parse(saved);
+    } else {
+      histData = defaultRaw.map(str => {
+        const p = str.split('|');
+        return { q: p[0], r: p[1].split(',').map(Number), b: Number(p[2]) };
+      });
+    }
+  }
+
+  function saveLocalData() {
+    localStorage.setItem('ssq_history_v1', JSON.stringify(histData));
+  }
+
+  function renderAll() {
     renderHist();
     renderChart();
     gen();
-  };
+  }
 
   function initKill() {
     const box = document.getElementById('kb');
@@ -124,26 +151,84 @@
     }
   }
 
-  async function syncOnline() {
-    try {
-      const res = await fetch('https://mxnzp.com');
-      const json = await res.json();
-      if (json && json.code === 1 && json.data) {
-        histData = json.data.map(item => {
-          const parts = item.openCode.split('+');
-          return {
-            q: item.expect,
-            r: parts[0].split(',').map(Number).sort((a,b) => a - b),
-            b: Number(parts[1])
-          };
-        });
+  async function syncOnline(isManual) {
+    const statusEl = document.getElementById('syncStatus');
+    statusEl.innerText = '⏳ 正在连接云端开奖接口同步最新数据...';
+    
+    // 多源公共接口轮询（包含防跨域代理通道）
+    const endpoints = [
+      'https://huiniao.top',
+      'https://allorigins.win' + encodeURIComponent('http://huiniao.top')
+    ];
+
+    let success = false;
+    for (let url of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const json = await res.json();
+        
+        // 解析返回格式
+        const list = (json.data && json.data.data) ? json.data.data : (Array.isArray(json.data) ? json.data : null);
+        if (list && list.length > 0) {
+          const parsed = list.map(item => {
+            const codeStr = item.openCode || item.code || '';
+            const parts = codeStr.split('+');
+            const reds = parts[0].split(',').map(Number).sort((a, b) => a - b);
+            const blue = Number(parts[1]);
+            return { q: String(item.code || item.expect), r: reds, b: blue };
+          }).filter(x => x.r.length === 6 && !isNaN(x.b));
+
+          if (parsed.length > 0) {
+            histData = parsed;
+            saveLocalData();
+            renderAll();
+            const now = new Date().toLocaleTimeString();
+            statusEl.innerText = `✅ 联网同步成功！最新期号：${histData[0].q} (${now})`;
+            statusEl.style.color = '#2b9348';
+            success = true;
+            break;
+          }
+        }
+      } catch (e) {
+        console.warn('当前节点请求受限，尝试备用通道...', e);
       }
-    } catch (e) {
-      console.log('使用本地历史数据库进行运算');
+    }
+
+    if (!success) {
+      statusEl.innerText = `⚠️ 公共接口繁忙或受跨域限制，当前使用本地缓存库 (最新期: ${histData[0].q})。可点击右上角手动追加。`;
+      statusEl.style.color = '#d97706';
+      if (isManual) alert('自动同步暂时受限（免费接口波动或跨域拦截），您可以点击“➕ 手动追加”直接输入最新开奖号！');
     }
   }
 
-  function renderHist() {
+  function addManual() {
+    const input = prompt('请输入最新一期开奖数据，格式为：\n期号|6个红球(逗号隔开)|蓝球\n\n例如：2026132|03,07,12,18,25,30|09');
+    if (!input) return;
+    try {
+      const p = input.trim().split('|');
+      if (p.length !== 3) throw new Error();
+      const q = p[0].trim();
+      const r = p[1].split(',').map(n => parseInt(n.trim(), 10)).filter(n => n >= 1 && n <= 33).sort((a,b) => a - b);
+      const b = parseInt(p[2].trim(), 10);
+      if (r.length !== 6 || isNaN(b) || b < 1 || b > 16) throw new Error();
+      
+      // 去重并插入到最顶部
+      histData = histData.filter(item => item.q !== q);
+      histData.unshift({ q, r, b });
+      if (histData.length > 30) histData.pop();
+      saveLocalData();
+      renderAll();
+      document.getElementById('syncStatus').innerText = `✅ 已手动更新期号 ${q} 并永久保存至本地！`;
+      document.getElementById('syncStatus').style.color = '#2b9348';
+    } catch (e) {
+      alert('格式有误！请严格按照示例输入：2026132|03,07,12,18,25,30|09');
+    }
+  }
+
+    function renderHist() {
     document.getElementById('hist').innerHTML = histData.map(item => 
       `<tr><td>${item.q}</td><td style="color:var(--p);font-weight:bold;">${item.r.map(n=>String(n).padStart(2,'0')).join(' ')}</td><td style="color:var(--blue);font-weight:bold;">${String(item.b).padStart(2,'0')}</td></tr>`
     ).join('');
